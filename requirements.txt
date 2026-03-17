@@ -1,0 +1,7 @@
+customtkinter
+opencv-python
+face-recognition
+mysql-connector-python
+numpy
+Pillow
+bcrypt
