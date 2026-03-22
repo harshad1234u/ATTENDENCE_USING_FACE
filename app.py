@@ -7,28 +7,33 @@ Uses `customtkinter` for the GUI, `opencv-python` + `face_recognition`
 for computer vision, and MySQL via `db_manager.py` for persistence.
 """
 
+import csv
+import os
 import threading
 import tkinter as tk
-from datetime import datetime
-from tkinter import messagebox
+from datetime import datetime, date
+from tkinter import messagebox, filedialog
 
 import cv2
 import customtkinter as ctk
 import numpy as np
+from dotenv import load_dotenv
 from PIL import Image, ImageTk
 
 from db_manager import DatabaseManager
 from face_utils import FaceRecognition
 
+# Load environment variables from .env (if present)
+load_dotenv()
 
 # ══════════════════════════════════════════════════════════════
 # Configuration
 # ══════════════════════════════════════════════════════════════
 DB_CONFIG = {
-    "host": "localhost",
-    "user": "root",
-    "password": "root",
-    "database": "attendance_db",
+    "host": os.getenv("DB_HOST", "localhost"),
+    "user": os.getenv("DB_USER", "root"),
+    "password": os.getenv("DB_PASSWORD", "root"),
+    "database": os.getenv("DB_NAME", "attendance_db"),
 }
 
 # customtkinter appearance
@@ -77,7 +82,7 @@ class AttendanceApp(ctk.CTk):
 
         # Page registry
         self.frames: dict[str, ctk.CTkFrame] = {}
-        for PageClass in (MainMenuPage, RegistrationPage, LiveAttendancePage, AdminLoginPage, AdminDashboardPage, StudentManagementPage):
+        for PageClass in (MainMenuPage, RegistrationPage, LiveAttendancePage, AdminLoginPage, AdminDashboardPage, StudentManagementPage, ExportAttendancePage):
             page = PageClass(parent=self.container, controller=self)
             self.frames[PageClass.__name__] = page
             page.grid(row=0, column=0, sticky="nsew")
@@ -736,6 +741,14 @@ class AdminDashboardPage(ctk.CTkFrame):
         )
         manage_btn.pack(side="left", padx=20)
 
+        # Export button
+        export_btn = ctk.CTkButton(
+            container, text="📤\nExport Attendance", width=220, height=120,
+            font=ctk.CTkFont(size=16, weight="bold"),
+            command=lambda: controller.show_frame("ExportAttendancePage")
+        )
+        export_btn.pack(side="left", padx=20)
+
 
 class StudentManagementPage(ctk.CTkFrame):
     """View, search, edit, and delete students."""
@@ -894,6 +907,126 @@ class EditStudentDialog(ctk.CTkToplevel):
             self.destroy()
         else:
             messagebox.showerror("Error", "Failed to update database.", parent=self)
+
+class ExportAttendancePage(ctk.CTkFrame):
+    """Export attendance records for a date range to a CSV file."""
+
+    def __init__(self, parent, controller: AttendanceApp):
+        super().__init__(parent, corner_radius=0)
+        self.controller = controller
+
+        # Top bar
+        top_bar = ctk.CTkFrame(self, fg_color="transparent")
+        top_bar.pack(fill="x", padx=20, pady=(14, 0))
+        ctk.CTkButton(
+            top_bar, text="← Back to Dashboard", width=150,
+            fg_color="transparent", border_width=1,
+            command=lambda: controller.show_frame("AdminDashboardPage"),
+        ).pack(side="left")
+        ctk.CTkLabel(
+            top_bar, text="Export Attendance", font=ctk.CTkFont(size=18, weight="bold")
+        ).pack(side="right")
+
+        # Form
+        form = ctk.CTkFrame(self, width=460, corner_radius=16)
+        form.pack(expand=True, pady=20)
+        form.pack_propagate(False)
+
+        ctk.CTkLabel(
+            form, text="📤  Export to CSV", font=ctk.CTkFont(size=20, weight="bold")
+        ).pack(pady=(28, 20))
+
+        row_frame = ctk.CTkFrame(form, fg_color="transparent")
+        row_frame.pack(padx=30, fill="x")
+
+        # Start date
+        start_col = ctk.CTkFrame(row_frame, fg_color="transparent")
+        start_col.pack(side="left", expand=True, fill="x", padx=(0, 10))
+        ctk.CTkLabel(start_col, text="Start Date (YYYY-MM-DD)", anchor="w").pack(fill="x")
+        self.start_entry = ctk.CTkEntry(start_col, placeholder_text="e.g. 2024-01-01")
+        self.start_entry.pack(fill="x", pady=(2, 0))
+
+        # End date
+        end_col = ctk.CTkFrame(row_frame, fg_color="transparent")
+        end_col.pack(side="left", expand=True, fill="x")
+        ctk.CTkLabel(end_col, text="End Date (YYYY-MM-DD)", anchor="w").pack(fill="x")
+        self.end_entry = ctk.CTkEntry(end_col, placeholder_text="e.g. 2024-12-31")
+        self.end_entry.pack(fill="x", pady=(2, 0))
+
+        self.status_label = ctk.CTkLabel(
+            form, text="", font=ctk.CTkFont(size=12), wraplength=380
+        )
+        self.status_label.pack(pady=(14, 0))
+
+        ctk.CTkButton(
+            form, text="Choose File & Export", width=300, height=42,
+            corner_radius=10, fg_color="#28a745", hover_color="#218838",
+            command=self._export,
+        ).pack(padx=30, pady=(12, 28))
+
+    def on_show(self):
+        today = date.today().isoformat()
+        self.start_entry.delete(0, "end")
+        self.start_entry.insert(0, today)
+        self.end_entry.delete(0, "end")
+        self.end_entry.insert(0, today)
+        self.status_label.configure(text="", text_color="white")
+
+    def _export(self):
+        start_str = self.start_entry.get().strip()
+        end_str = self.end_entry.get().strip()
+
+        # Validate dates
+        try:
+            start_date = date.fromisoformat(start_str)
+            end_date = date.fromisoformat(end_str)
+        except ValueError:
+            self.status_label.configure(
+                text="❌ Invalid date format. Use YYYY-MM-DD.", text_color="red"
+            )
+            return
+
+        if start_date > end_date:
+            self.status_label.configure(
+                text="❌ Start date must be on or before end date.", text_color="red"
+            )
+            return
+
+        # Ask user where to save the file
+        filepath = filedialog.asksaveasfilename(
+            defaultextension=".csv",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+            initialfile=f"attendance_{start_str}_to_{end_str}.csv",
+            title="Save Attendance CSV",
+        )
+        if not filepath:
+            return  # user cancelled
+
+        records = self.controller.db.get_attendance_by_date_range(start_date, end_date)
+
+        try:
+            with open(filepath, "w", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                writer.writerow(["Roll No", "Name", "Class", "Date", "Time"])
+                for rec in records:
+                    writer.writerow([
+                        rec["roll_no"],
+                        rec["name"],
+                        rec["class_name"],
+                        str(rec["date"]),
+                        str(rec["time"])[:8],
+                    ])
+        except OSError as e:
+            self.status_label.configure(
+                text=f"❌ Could not write file: {e}", text_color="red"
+            )
+            return
+
+        self.status_label.configure(
+            text=f"✅ Exported {len(records)} record(s) to:\n{filepath}",
+            text_color="#28a745",
+        )
+
 
 # ══════════════════════════════════════════════════════════════
 # Entry Point
