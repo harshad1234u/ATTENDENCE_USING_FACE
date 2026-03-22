@@ -9,7 +9,8 @@ A GUI-based attendance system that uses real-time face recognition to automatica
 | GUI             | `customtkinter`                  |
 | Computer Vision | `opencv-python`, `face-recognition` |
 | Database        | `mysql-connector-python` (MySQL) |
-| Data Handling   | `numpy`, `pickle`, `Pillow`      |
+| Data Handling   | `numpy`, `Pillow`                |
+| Config          | `python-dotenv`                  |
 
 ## Prerequisites
 
@@ -29,20 +30,26 @@ Open MySQL Workbench (or CLI) and run:
 source schema.sql;
 ```
 
-This creates the `attendance_db` database with `students` and `attendance_logs` tables.
+This creates the `attendance_db` database with `students`, `attendance_logs`, and `admins` tables, and seeds a default admin account (`admin` / `admin123`).
 
 ### 2. Configure Database Credentials
 
-Edit the `DB_CONFIG` dictionary at the top of `app.py`:
+Copy `.env.example` to `.env` and fill in your MySQL credentials:
 
-```python
-DB_CONFIG = {
-    "host": "localhost",
-    "user": "root",
-    "password": "YOUR_PASSWORD_HERE",
-    "database": "attendance_db",
-}
+```bash
+cp .env.example .env
 ```
+
+Then edit `.env`:
+
+```ini
+DB_HOST=localhost
+DB_USER=root
+DB_PASSWORD=your_mysql_password_here
+DB_NAME=attendance_db
+```
+
+> **Never commit `.env` to version control.** It is listed in `.gitignore`.
 
 ### 3. Install Python Dependencies
 
@@ -59,14 +66,25 @@ python app.py
 ## Usage
 
 ### Registering a Student
-1. Click **"Open Registration"** from the main menu
-2. Fill in Name, Roll Number, and Class
-3. Click **"Capture Face"** — a webcam window opens
-4. Position your face and press **SPACE** to capture (or **Q** to cancel)
-5. Click **"Register Student"** to save
+1. Log in via the **Admin Panel** (default: `admin` / `admin123`)
+2. Click **"Register New Student"**
+3. Fill in Name, Roll Number, and Class
+4. Click **"Capture Face"** — a webcam window opens
+5. Position your face and press **SPACE** to capture (or **Q** to cancel)
+6. Click **"Register Student"** to save
 
 ### Taking Attendance
 1. Click **"Open Attendance"** from the main menu
 2. The live camera feed will detect and recognise registered faces
 3. Attendance is automatically logged (once per student per day)
 4. The right panel shows today's attendance in real time
+
+### Managing Students (Admin Panel)
+1. Log in via the **Admin Panel**
+2. Click **"Manage Students"** to view, search, edit, or delete students
+
+### Exporting Attendance to CSV (Admin Panel)
+1. Log in via the **Admin Panel**
+2. Click **"Export Attendance"**
+3. Enter a start and end date (YYYY-MM-DD format)
+4. Click **"Choose File & Export"** and pick where to save the CSV file

@@ -6,7 +6,6 @@ Handles all MySQL CRUD operations for the `students` and
 `attendance_logs` tables inside the `attendance_db` database.
 """
 
-import pickle
 from datetime import date, datetime
 
 import bcrypt
@@ -113,8 +112,8 @@ class DatabaseManager:
         self._ensure_connection()
         try:
             cursor = self.connection.cursor()
-            # Serialize the numpy array to bytes using pickle
-            encoding_blob = pickle.dumps(face_encoding)
+            # Serialize the numpy array to raw bytes (float64, 128 values)
+            encoding_blob = face_encoding.astype(np.float64).tobytes()
             query = (
                 "INSERT INTO students (roll_no, name, class_name, face_encoding) "
                 "VALUES (%s, %s, %s, %s)"
@@ -162,7 +161,7 @@ class DatabaseManager:
                     "roll_no": row["roll_no"],
                     "name": row["name"],
                     "class_name": row["class_name"],
-                    "face_encoding": pickle.loads(row["face_encoding"]),
+                    "face_encoding": np.frombuffer(row["face_encoding"], dtype=np.float64).copy(),
                 }
             )
         return students
@@ -221,7 +220,7 @@ class DatabaseManager:
                     "roll_no": row["roll_no"],
                     "name": row["name"],
                     "class_name": row["class_name"],
-                    "face_encoding": pickle.loads(row["face_encoding"]),
+                    "face_encoding": np.frombuffer(row["face_encoding"], dtype=np.float64).copy(),
                 }
             )
         return students
@@ -298,6 +297,37 @@ class DatabaseManager:
             "ORDER BY a.time ASC"
         )
         cursor.execute(query, (date.today(),))
+        rows = cursor.fetchall()
+        cursor.close()
+        return rows
+
+    def get_attendance_by_date_range(
+        self, start_date: date, end_date: date
+    ) -> list:
+        """Fetch attendance records within a date range (inclusive).
+
+        Parameters
+        ----------
+        start_date : date
+            Start of the range (inclusive).
+        end_date : date
+            End of the range (inclusive).
+
+        Returns
+        -------
+        list of dict
+            Each dict has keys: roll_no, name, class_name, date, time.
+        """
+        self._ensure_connection()
+        cursor = self.connection.cursor(dictionary=True)
+        query = (
+            "SELECT a.roll_no, s.name, s.class_name, a.date, a.time "
+            "FROM attendance_logs a "
+            "JOIN students s ON a.roll_no = s.roll_no "
+            "WHERE a.date BETWEEN %s AND %s "
+            "ORDER BY a.date ASC, a.time ASC"
+        )
+        cursor.execute(query, (start_date, end_date))
         rows = cursor.fetchall()
         cursor.close()
         return rows
